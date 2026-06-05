@@ -1,42 +1,38 @@
 # Nemsy 项目配置
-# 敏感信息（API Key 等）通过 .env 文件或环境变量传入，不写在这里
+# 规则：所有配置都在这里；只有 DEEPSEEK_API_KEY 放在 .env 中
 
 [app]
 name = "Nemsy"
 version = "0.1.0"
-# 角色描述，未来人格化阶段扩展
 persona = "Nemsy Necrofizzle"
 
 [vault]
-# Obsidian Vault 根目录
-# 可被环境变量 NEMSY_VAULT_PATH 覆盖
+# Obsidian Vault 根目录（你的个人 Vault）
 path = "/Users/ppp/Library/CloudStorage/OneDrive-个人/文档/Obsidian Vault"
-# 忽略的目录（不纳入索引）
-ignore_dirs = [".obsidian", ".trash", ".DS_Store"]
-# 支持的文件扩展名
+# Wiki 子目录名（位于 Vault 内，由 Nemsy 负责写）
+wiki_dir = "nemsy-wiki"
+# 原始资料子目录（位于 Vault 内，整理好后填入，留空=未配置）
+raw_sources_dir = "origin-resource"
+# 索引时跳过的目录
+ignore_dirs = [".obsidian", ".trash", ".DS_Store", "nemsy-wiki"]
+# 纳入索引的扩展名
 include_extensions = [".md"]
 
 [llm]
-# DeepSeek API（OpenAI 兼容）
 base_url = "https://api.deepseek.com"
-# 模型选择：deepseek-chat（快速）或 deepseek-reasoner（深度推理）
-default_model = "deepseek-chat"
-# 超长上下文场景用 reasoner
-reasoning_model = "deepseek-reasoner"
-# 单次请求最大 token（DeepSeek 支持 128k context）
+# deepseek-v4-flash：日常对话（快速，非思考模式）
+# deepseek-v4-pro：深度推理（思考模式，原 deepseek-reasoner）
+# 注：deepseek-chat / deepseek-reasoner 将于 2026-07-24 弃用
+default_model = "deepseek-v4-flash"
+reasoning_model = "deepseek-v4-pro"
 max_tokens = 8192
 temperature = 0.7
 
 [memory]
-# 对话历史保存路径（相对于项目根目录）
 history_dir = ".nemsy/history"
-# 最多保留的对话轮数（0 = 不限）
 max_turns = 0
-# 知识摘要缓存
 summary_cache_dir = ".nemsy/cache"
 
 [cli]
-# CLI 输出主题色（rich 颜色名）
 theme_color = "cyan"
-# 每次启动显示欢迎语
 show_welcome = true
