@@ -27,17 +27,16 @@ Wiki 不是笔记的镜像，是**思想的精选提炼**。
 ```
 ┌─────────────────────────────────────────────┐
 │  Layer 3：Schema 层                          │
-│  AGENTS.md — 存于 Vault，定义写作规范         │
+│  AGENTS.md — 存于项目 config/，产品行为规范   │
 │  config/settings.toml — 路径、模型、行为配置  │
 └─────────────────────────────────────────────┘
                       ↕
 ┌─────────────────────────────────────────────┐
 │  Layer 2：Wiki 层（nemsy-wiki/）              │
 │  由 Nemsy 负责写入，用户只读                  │
-│  sources/   → 摄取摘要页面                   │
-│  entities/  → 人物、组织、概念                │
-│  concepts/  → 抽象知识节点                   │
-│  queries/   → 查询归档                       │
+│  sources/   → 用户的资料                    │
+│  insights/  → 共同创造的观点（chat 涌现归档）  │
+│  queries/   → 问答归档（单次 query 结果）      │
 │  index.md   → 全局入口                       │
 │  log.md     → 操作日志                       │
 └─────────────────────────────────────────────┘
@@ -232,12 +231,14 @@ src/nemsy/
 └── config.py     配置加载（settings.toml + .env）
 
 config/
-└── settings.toml  路径、模型、行为配置
+├── settings.toml  路径、模型、行为配置
+└── AGENTS.md      LLM 行为规范（产品内置，随代码版本管理，不放 Vault）
 
-.nemsy/            运行时数据（.gitignore 已排除）
-├── ingest_log.json  文件状态记录
-├── history/         对话历史（待实现）
-└── cache/           摘要缓存（待实现）
+.nemsy/            Nemsy 私有状态（.gitignore 已排除，不属于 Wiki 也不属于代码）
+├── ingest_log.json  文件摄取状态机（hash / status / ingested_at 等）
+├── token_log.json   LLM 调用计费日志（时间、命令、model、token 数）
+├── persona.json     Nemsy 人格与角色扮演配置（语气、风格、偏好，待实现）
+└── friendship.md    Nemsy 对用户的认知摘要（关注领域、思维偏好、重要决策，定期由 Nemsy 自更新，待实现）
 ```
 
 ---
@@ -312,19 +313,26 @@ LLM（_QUERY_SYSTEM prompt）
 - [x] lint（Wiki 健康检查）
 - [x] status（状态总览）
 - [x] sources（原始资料目录树）
-- [x] Wiki 写入（sources/entities/concepts/queries 子目录）
+- [x] Wiki 写入（sources/queries 子目录）
+- [x] insights/ 子目录已预留（待 chat 归档功能实现后启用）
 - [x] index.md 自动更新
-- [x] log.md 操作记录
+- [x] log.md 操作记录（仅保留操作摘要；调用 LLM 时只注入最近 N 条作为参考上下文，不全量传入）
 - [x] Anthropic SDK（DeepSeek 兼容协议，为 MCP 铺路）
 
 ### 待实现（MVP 核心缺口）
+
+> 优先级排序：先建好语境层（`_index.md`），再做状态机可靠性，最后做模式分化。  
+> 原因：`_index.md` 影响所有后续摄取的 tag 质量，应在大批量摄取前完成。
+
+- [ ] **`_index.md` 目录语境支持**（⭐ 优先）：每个目录下可放一个 `_index.md` 描述该目录的领域定位与收集意图；`collect_files()` 将其**从返回列表中排除**（不参与摄取流程、不进 ingest_log、不生成 Wiki 摘要页）；ingest 批量处理该目录时，单独读取 `_index.md` 内容作为**目录语境前缀**注入同目录其他文件的 prompt，引导 LLM 使用预设 tags 框架。模板见 `config/_index.example.md`。
 - [ ] **ingest_log 升级**：布尔值 → 状态机（empty/done/changed），含 SHA-256、`prev_hash`、`ingested_at` 数组、`ingest_mode`、`wiki_page`
 - [ ] **哈希变化检测**：SHA-256，自动识别 `changed` 文件，空文件直接记录 `empty` 跳过 LLM
 - [ ] **ingest quick/full 双模式**：目录输入默认 quick（只传 index.md），单文件默认 full，`--deep` 强制 full
-- [ ] **`_index.md` 目录语境支持**：每个目录下可放一个 `_index.md` 作为该目录的主题概述；`collect_files()` 将其**从返回列表中排除**（不参与摄取流程、不进 ingest_log、不生成 Wiki 摘要页）；ingest 批量处理该目录时，单独读取 `_index.md` 内容作为上下文前缀注入同目录其他文件的 prompt（替代旧的 `__init__.md` 命名）
 - [ ] **wiki_page 反向映射**：原始资料 → Wiki 摘要页，`ingest_mode` 写入摘要页 frontmatter
-- [ ] **对话历史持久化**：chat 记录写入 `.nemsy/history/`
+- [ ] **chat 归档（`/save` + `ARCHIVABLE`）**：chat 过程中产生的有价值结论写入 `insights/` 子目录；两种触发方式：① 用户手动输入 `/save`，Nemsy 将最近几轮对话整理为结构化洞见页；② LLM 回复末尾标注 `ARCHIVABLE: true` 时，Nemsy 自动提示用户确认归档。归档目标：`insights/<标题>-<日期>.md`，frontmatter 标注 `type: insight`、`source: chat`。
+- [ ] **对话历史持久化**：chat 轮次写入 `log.md` 摘要；不单独存全文历史（与 log.md 职责合并）
 - [ ] **sources 命令显示文件状态**：在目录树旁标注 empty/done/changed/ingested_at
+- [ ] **token_log.json**：每次 LLM 调用后写入一条记录，字段：`timestamp`、`command`（ingest/query/lint/chat）、`model`、`prompt_tokens`、`completion_tokens`、`total_tokens`；`nemsy status` 命令展示累计消耗摘要
 
 ### lint 增强（MVP 内，纯 Python 实现，不依赖外部工具）
 - [ ] **`backlinks()`**：扫描 Wiki 全部 `.md`，解析所有 `[[链接]]`，构建反向索引（谁链接了某页）；供 lint 识别孤立页面
@@ -333,12 +341,30 @@ LLM（_QUERY_SYSTEM prompt）
 > 两者均基于正则 + Path，零外部依赖，不要求 Obsidian 进程运行，可移植到任意 Markdown 存储。
 
 ### 超出 MVP 范围（未来迭代）
+
+#### 知识能力增强
 - [ ] Function Calling（自然语言触发 ingest/sources）
 - [ ] 向量检索（替代全文 context 注入）
 - [ ] Wiki 页面自动更新（changed 时 diff 并合并，而非覆盖）
 - [ ] 文件重命名/移动的 log 迁移
-- [ ] Web UI
-- [ ] **Token 消耗统计模块**：跟踪每次 LLM 调用的 token 用量（prompt / completion / 总计），支持按命令/按文件/按时间段汇总；具体设计待定
+- [ ] 进一步的 token 消耗分析：按文件/按时间段汇总（基础记录在 MVP 内实现，这里仅指更多维度的分析能力）
+- [ ] **qmd 检索引擎**：替代当前全文注入方案；支持 BM25/向量混合搜索 + LLM 重排序，全本地运行；触发时机：Wiki 页数 > 50-100 页，或 query 出现 token 超限问题时；可直接替换 `_load_wiki_context()` 实现，对外接口不变
+- [ ] **`/digest` 对话摘要**：每隔 N 轮或用户主动触发，Nemsy 将整段对话提炼为结构化笔记写回 `insights/`；是 `/save` 的自动化升级版
+
+#### 网络感知能力
+- [ ] **Web 搜索工具**：赋予 Nemsy 检索实时网络信息的能力（Brave Search API / Tavily 等），chat 和 query 时可主动查询补充知识盲区；与本地 Wiki 形成"长期记忆（Wiki）+ 实时检索（Web）"的双轨结构
+- [ ] **网页摘取**：给定 URL，Nemsy 自动抓取正文、生成摘要、存入 `sources/`，省去手动用 Obsidian Web Clipper 的步骤
+
+#### 人格与情感层（Nemsy 角色化）
+- [ ] **`persona.json`**：Nemsy 人格配置，支持语气、角色扮演风格、回答偏好等自定义；每次启动注入 system prompt
+- [ ] **`friendship.md`**：Nemsy 对用户的认知摘要，记录用户的关注领域、思维偏好、重要决策节点；由 Nemsy 定期自主更新，每次对话启动时作为"私人记忆"注入 context
+- [ ] **情绪感知**：分析用户输入的情绪倾向（疲惫、兴奋、困惑等），动态调整 Nemsy 的回应风格和信息密度
+- [ ] **交互式反馈**：Nemsy 主动生成问题或挑战用户的观点，而非只是回答，形成真正的双向思想碰撞
+
+#### 虚拟形象层（远期）
+- [ ] **Nemsy 电子形象**：基于 Nemsy Necrofizzle 角色的视觉化虚拟助理，Web UI 内嵌实时交互界面
+- [ ] **语音交互**：TTS / STT 支持，实现面对面语音对话体验
+- [ ] **Web UI**：从 CLI 演进为跨端 Web 界面，支持移动端访问
 
 ---
 

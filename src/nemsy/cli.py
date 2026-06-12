@@ -493,8 +493,6 @@ def _print_status() -> None:
     v = settings.vault
     sources_count = len(list(wiki_path.glob(f"{v.wiki_sources_dir}/*.md"))) if wiki_path.exists() else 0
     queries_count = len(list(wiki_path.glob(f"{v.wiki_queries_dir}/*.md"))) if wiki_path.exists() else 0
-    entities_count = len(list(wiki_path.glob(f"{v.wiki_entities_dir}/*.md"))) if wiki_path.exists() else 0
-    concepts_count = len(list(wiki_path.glob(f"{v.wiki_concepts_dir}/*.md"))) if wiki_path.exists() else 0
 
     # Vault 信息
     vault_table = Table(title="Vault", border_style="cyan", show_header=False, box=None)
@@ -519,7 +517,7 @@ def _print_status() -> None:
     wiki_table.add_row("页面总数", str(len(wiki_notes)))
     wiki_table.add_row(
         "分布",
-        f"sources {sources_count}  queries {queries_count}  entities {entities_count}  concepts {concepts_count}",
+        f"sources {sources_count}  queries {queries_count}",
     )
     has_index = (wiki_path / v.wiki_index_file).exists() if wiki_path.exists() else False
     has_log = (wiki_path / v.wiki_log_file).exists() if wiki_path.exists() else False

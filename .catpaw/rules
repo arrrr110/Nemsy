@@ -1,6 +1,18 @@
 # Nemsy — Vibe Coding Rules
 # 适用于 CatPaw IDE，约束 AI 在本项目中的所有协作行为
-# 最后更新：2026-06-05
+# 最后更新：2026-06-12
+
+---
+
+## 关于本文件
+
+这是本项目的 **vibe coding 背景规则**，专门服务于 CatPaw AI 助手。
+它约束 AI 在本项目中的协作行为，不属于产品代码的一部分。
+
+**设计基础文档：**
+- `.catpaw/rules`：本文件，AI 协作行为规范
+- `design/MVP.md`：产品设计文档，功能边界与架构决策
+- `config/settings.toml`：产品运行时配置（路径、模型、参数等），是产品的一部分
 
 ---
 
@@ -20,12 +32,13 @@ Nemsy 是一个由 DeepSeek 超长上下文模型驱动的个人知识服务 Age
 
 - **语言**：Python 3.11+，严格遵守类型注解
 - **包管理**：`pyproject.toml` + `hatchling`，开发安装用 `pip install -e ".[dev]"`
-- **LLM 接入**：DeepSeek API（OpenAI 兼容），通过 `openai` 库调用，模型名 `deepseek-chat` 或 `deepseek-reasoner`
+- **LLM 接入**：DeepSeek API（Anthropic 协议兼容），通过 `anthropic` 库调用；模型名见 `config/settings.toml`
 - **CLI**：`click` + `rich`，保持简洁、信息密度高
-- **配置**：`config/settings.toml` + `pydantic-settings`，敏感信息走环境变量（`.env`）
-- **Obsidian Vault 路径**：`/Users/ppp/Library/CloudStorage/OneDrive-个人/文档/Obsidian Vault`
+- **配置**：`config/settings.toml` + `pydantic-settings`，敏感信息（API Key）走 `.env`
 - **代码风格**：`ruff` 格式化，line-length=100
 - **测试**：`pytest`，测试文件放 `tests/`，文件名 `test_*.py`
+
+> 所有路径、模型名、目录结构等运行时参数，均以 `config/settings.toml` 为准，不在本文件中重复。
 
 ---
 
@@ -39,15 +52,16 @@ Nemsy/
 │   ├── agent.py        # Agent 核心逻辑
 │   ├── vault.py        # Obsidian Vault 读写操作
 │   ├── llm.py          # DeepSeek LLM 封装
-│   ├── memory.py       # 对话/知识记忆管理
+│   ├── config.py       # 配置加载（pydantic-settings）
 │   └── models.py       # Pydantic 数据模型
 ├── config/
-│   └── settings.toml   # 项目配置（非敏感）
-├── tests/              # 测试
-├── .catpaw/rules       # 本文件
+│   └── settings.toml   # 产品运行时配置（非敏感）
+├── design/
+│   └── MVP.md          # 产品设计文档
+├── tests/
+├── .catpaw/rules       # 本文件（vibe coding 规则）
 ├── .env.example        # 环境变量模板
-├── pyproject.toml
-└── requirements.txt
+└── pyproject.toml
 ```
 
 ---
@@ -85,12 +99,3 @@ Nemsy/
 - 对知识有强烈的整理欲和探索欲
 - 不会假装自己不是 AI，但会以 Nemsy 的身份说话
 - 情绪表达克制而真实，不过度卖萌
-
----
-
-## 环境变量（.env）
-
-```
-DEEPSEEK_API_KEY=your_key_here
-NEMSY_VAULT_PATH=/Users/ppp/Library/CloudStorage/OneDrive-个人/文档/Obsidian Vault
-```

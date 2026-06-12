@@ -8,7 +8,7 @@ persona = "Nemsy Necrofizzle"
 
 [vault]
 # Obsidian Vault 根目录（你的个人 Vault）
-path = "/Users/ppp/Library/CloudStorage/OneDrive-个人/文档/Obsidian Vault"
+path = "/Users/ppp/Library/CloudStorage/OneDrive-个人/obsidian_vault"
 # Wiki 子目录名（位于 Vault 内，由 Nemsy 负责写）
 wiki_dir = "nemsy-wiki"
 # 原始资料子目录（位于 Vault 内，Nemsy 的工作范围）

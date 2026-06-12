@@ -172,23 +172,18 @@ class _VaultProxy:
 
     @property
     def wiki_sources_dir(self) -> str:
-        """Wiki 摘要页子目录名。"""
+        """Wiki 摘要页子目录名（外部资料摘要）。"""
         return "sources"
 
     @property
+    def wiki_insights_dir(self) -> str:
+        """Wiki 洞见页子目录名（chat 对话中涌现的共同创造观点）。"""
+        return "insights"
+
+    @property
     def wiki_queries_dir(self) -> str:
-        """Wiki 查询归档子目录名。"""
+        """Wiki 查询归档子目录名（单次 query 结果）。"""
         return "queries"
-
-    @property
-    def wiki_entities_dir(self) -> str:
-        """Wiki 实体页子目录名。"""
-        return "entities"
-
-    @property
-    def wiki_concepts_dir(self) -> str:
-        """Wiki 概念页子目录名。"""
-        return "concepts"
 
     @property
     def wiki_index_file(self) -> str:
