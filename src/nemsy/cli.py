@@ -233,24 +233,33 @@ def status() -> None:
 # 内部异步运行函数
 # ---------------------------------------------------------------------------
 
-async def _run_ingest_single(path: Path, title: str | None = None) -> bool:
-    """摄取单个文件，返回是否成功。"""
+async def _run_ingest_single(
+    path: Path,
+    content: str | None = None,
+    title: str | None = None,
+) -> bool:
+    """摄取单个文件，返回是否成功。
+
+    Args:
+        path: 文件路径。
+        content: 预读的文件内容，为 None 时自动读取。
+        title: 资料标题，默认使用文件名。
+    """
     from nemsy.agent import ingest as agent_ingest
-    from nemsy.vault import record_ingest
 
     if not path.exists():
         console.print(f"[red]文件不存在：{_display_path(path)}[/red]")
         return False
 
-    try:
-        content = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as e:
-        console.print(f"[red]读取失败：{_display_path(path)} — {e}[/red]")
-        return False
+    if content is None:
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            console.print(f"[red]读取失败：{_display_path(path)} — {e}[/red]")
+            return False
 
     source_title = title or path.stem
-    await agent_ingest(content, source_title)
-    record_ingest(path)
+    await agent_ingest(content, source_title, source_path=path, ingest_mode="full")
     return True
 
 
@@ -300,7 +309,7 @@ async def _run_ingest_batch(
     dry_run: bool = False,
 ) -> None:
     """批量摄取文件或目录。"""
-    from nemsy.vault import collect_files, is_ingested
+    from nemsy.vault import collect_files, get_file_status
 
     # PATH 未传时，默认扫描 origin-sources/ 根目录
     if path is None:
@@ -321,33 +330,55 @@ async def _run_ingest_batch(
             console.print(f"[yellow]⚠ 未在以下路径找到任何可摄取文件：{_display_path(path)}[/yellow]")
         return
 
-    # 过滤已摄取文件（除非 --force）
-    pending: list[Path] = []
-    skipped: list[Path] = []
+    # 读取内容并按状态分组
+    pending: list[tuple[Path, str]] = []   # (path, content) 待摄取（new / changed）
+    skipped: list[Path] = []               # done，已是最新
+    empty: list[Path] = []                 # 空文件，记录但跳过 LLM
+
     for f in files:
-        if not force and is_ingested(f):
+        try:
+            content = f.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            content = ""
+        status = get_file_status(f, content)
+
+        if status == "empty":
+            empty.append(f)
+            # 空文件也写入 log，标记 status=empty
+            from nemsy.vault import record_ingest as _record
+            _record(f, content)
+        elif status == "done" and not force:
             skipped.append(f)
         else:
-            pending.append(f)
+            # new / changed / force 覆盖
+            pending.append((f, content))
 
     # 统计摘要
     is_batch = path.is_dir() or len(files) > 1
     if is_batch:
         console.print(f"[dim]路径：{_display_path(path)}[/dim]")
+        parts = [
+            f"共 [cyan]{len(files)}[/cyan] 个文件",
+            f"[green]{len(pending)}[/green] 个待摄取",
+        ]
+        if skipped:
+            parts.append(f"[dim]{len(skipped)} 个已跳过（done）[/dim]")
+        if empty:
+            parts.append(f"[dim]{len(empty)} 个空文件[/dim]")
         console.print(
-            f"[bold cyan]批量摄取[/bold cyan] "
-            f"共 [cyan]{len(files)}[/cyan] 个文件，"
-            f"[green]{len(pending)}[/green] 个待摄取，"
-            f"[dim]{len(skipped)}[/dim] 个已跳过"
+            f"[bold cyan]批量摄取[/bold cyan] " + "，".join(parts)
             + ("[bold yellow]（--force 强制全量）[/bold yellow]" if force else "")
         )
         if skipped:
-            console.print(f"[dim]已跳过（已摄取）：{', '.join(f.name for f in skipped[:5])}"
+            console.print(f"[dim]已跳过（done）：{', '.join(f.name for f in skipped[:5])}"
                          f"{'...' if len(skipped) > 5 else ''}[/dim]")
+        if empty:
+            console.print(f"[dim]空文件（已记录）：{', '.join(f.name for f in empty[:5])}"
+                         f"{'...' if len(empty) > 5 else ''}[/dim]")
 
     if dry_run:
         console.print("\n[yellow]--dry-run 模式，仅列出待摄取文件，不实际执行：[/yellow]")
-        for f in pending:
+        for f, _ in pending:
             console.print(f"  [dim]{_display_path(f)}[/dim]")
         if not pending:
             console.print("  [dim]（无待处理文件）[/dim]")
@@ -374,7 +405,8 @@ async def _run_ingest_batch(
 
     # 单文件模式直接摄取（允许传 --title）
     if not is_batch:
-        await _run_ingest_single(pending[0], title=title)
+        f, content = pending[0]
+        await _run_ingest_single(f, content=content, title=title)
         return
 
     # 批量模式：带进度条
@@ -392,9 +424,9 @@ async def _run_ingest_batch(
         transient=False,
     ) as progress:
         task = progress.add_task("[cyan]摄取中...", total=len(pending))
-        for f in pending:
+        for f, content in pending:
             progress.update(task, description=f"[cyan]{_display_path(f)[:50]}")
-            ok = await _run_ingest_single(f)
+            ok = await _run_ingest_single(f, content=content)
             if ok:
                 success += 1
             else:

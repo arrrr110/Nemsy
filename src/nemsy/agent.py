@@ -161,16 +161,27 @@ def _update_index(title: str, filename: str, summary_line: str) -> None:
 # 三大核心操作
 # ---------------------------------------------------------------------------
 
-async def ingest(source_content: str, source_title: str, *, stream: bool = True) -> str:
+async def ingest(
+    source_content: str,
+    source_title: str,
+    *,
+    source_path: Path | None = None,
+    ingest_mode: str = "full",
+    stream: bool = True,
+) -> str | None:
     """摄取新资料，整合进 Wiki。
 
     Args:
         source_content: 资料的完整文本内容。
         source_title: 资料标题（用于命名摘要页面和日志）。
+        source_path: 原始文件绝对路径，用于写入 ingest_log；为 None 时跳过 log 写入。
+        ingest_mode: 摄取模式，"quick" 或 "full"。
         stream: 是否流式输出到控制台。
     Returns:
-        LLM 的完整回复文本。
+        生成的 Wiki 摘要页相对路径（如 "sources/xxx-2026-06-12.md"），失败时返回 None。
     """
+    from nemsy.vault import record_ingest
+
     wiki_context = _load_wiki_context()
     user_prompt = f"""请处理以下资料：
 
@@ -194,17 +205,27 @@ async def ingest(source_content: str, source_title: str, *, stream: bool = True)
     else:
         full_response = await llm.chat(system, messages)
 
-    # 解析并写入摘要页面
-    _parse_and_write_ingest(full_response, source_title)
+    # 解析并写入摘要页面，获取生成的 wiki_page 路径
+    wiki_page = _parse_and_write_ingest(full_response, source_title)
     append_log("ingest", source_title)
 
-    return full_response
+    # 写入 ingest_log（含 hash、ingest_mode、wiki_page）
+    if source_path is not None:
+        record_ingest(source_path, source_content, ingest_mode=ingest_mode, wiki_page=wiki_page)
+
+    return wiki_page
 
 
-def _parse_and_write_ingest(response: str, source_title: str) -> None:
-    """解析 ingest 响应，写入 Wiki 摘要页面并更新相关页面。"""
+def _parse_and_write_ingest(response: str, source_title: str) -> str | None:
+    """解析 ingest 响应，写入 Wiki 摘要页面并更新相关页面。
+
+    Returns:
+        生成的摘要页相对路径（如 "sources/xxx-2026-06-12.md"），未生成时返回 None。
+    """
     import re
     from datetime import date
+
+    wiki_page: str | None = None
 
     # 提取 SUMMARY 部分
     summary_match = re.search(r"---SUMMARY---\n(.*?)(?=---UPDATES---|---QUESTIONS---|$)", response, re.DOTALL)
@@ -227,6 +248,7 @@ def _parse_and_write_ingest(response: str, source_title: str) -> None:
 
         _update_index(source_title, filename, f"来自 {source_title} 的摘要")
         console.print(f"\n[green]✓ 摘要已写入：{filename}[/green]")
+        wiki_page = filename
 
     # 提取 UPDATES 部分并展示（实际更新由用户确认后执行）
     updates_match = re.search(r"---UPDATES---\n(.*?)(?=---QUESTIONS---|$)", response, re.DOTALL)
@@ -234,6 +256,8 @@ def _parse_and_write_ingest(response: str, source_title: str) -> None:
         updates_text = updates_match.group(1).strip()
         if updates_text:
             console.print(f"\n[yellow]需要更新的 Wiki 页面：[/yellow]\n{updates_text}")
+
+    return wiki_page
 
 
 async def query(question: str, *, stream: bool = True, archive: bool = False) -> str:
@@ -249,9 +273,9 @@ async def query(question: str, *, stream: bool = True, archive: bool = False) ->
     wiki_context = _load_wiki_context()
     user_prompt = f"""问题：{question}
 
----Wiki 内容---
-{wiki_context}
-"""
+    ---Wiki 内容---
+    {wiki_context}
+    """
     system, messages = llm.build_messages(_QUERY_SYSTEM.format(wiki_path=settings.vault.wiki_path), [], user_prompt)
 
     if stream:
@@ -296,9 +320,9 @@ async def lint(*, stream: bool = True) -> str:
     wiki_context = _load_wiki_context(max_files=50)
     user_prompt = f"""请对以下 Wiki 进行全面健康检查：
 
----Wiki 内容---
-{wiki_context}
-"""
+    ---Wiki 内容---
+    {wiki_context}
+    """
     system, messages = llm.build_messages(_LINT_SYSTEM.format(wiki_path=settings.vault.wiki_path), [], user_prompt)
 
     if stream:

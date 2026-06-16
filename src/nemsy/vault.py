@@ -219,8 +219,12 @@ def delete_wiki_note(filename: str, *, confirmed: bool = False) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# 摄取日志（防重复摄取）
+# 摄取日志（状态机，v2 格式）
 # ---------------------------------------------------------------------------
+
+# 空文件的固定 SHA-256（echo -n "" | sha256sum）
+_EMPTY_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
 
 def _ingest_log_path() -> Path:
     """返回摄取日志文件路径（.nemsy/ingest_log.json）。"""
@@ -229,42 +233,104 @@ def _ingest_log_path() -> Path:
     return log_path
 
 
-def load_ingest_log() -> dict[str, str]:
-    """加载已摄取文件的记录。
-
-    Returns:
-        字典：{文件绝对路径字符串: 摄取时间戳字符串}
-    """
-    path = _ingest_log_path()
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
+def compute_hash(content: str) -> str:
+    """计算字符串内容的 SHA-256 哈希值（十六进制）。"""
+    import hashlib
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-def record_ingest(file_path: Path) -> None:
-    """将文件记录为已摄取。
-
-    Args:
-        file_path: 被摄取文件的绝对路径。
-    """
-    log = load_ingest_log()
-    log[str(file_path.resolve())] = datetime.now().isoformat()
+def _save_ingest_log(log: dict) -> None:
+    """将 ingest_log 写回磁盘。"""
     _ingest_log_path().write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def is_ingested(file_path: Path) -> bool:
-    """检查文件是否已经被摄取过。
+def load_ingest_log() -> dict:
+    """加载摄取日志，返回 v2 格式结构。
+
+    Returns:
+        {"version": 2, "files": {路径: {...}}}
+    """
+    path = _ingest_log_path()
+    if not path.exists():
+        return {"version": 2, "files": {}}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {"version": 2, "files": {}}
+    # 若已是 v2 格式直接返回
+    if isinstance(data, dict) and data.get("version") == 2:
+        return data
+    # 否则返回空 v2（用户已声明不在乎旧数据）
+    return {"version": 2, "files": {}}
+
+
+def get_file_status(file_path: Path, content: str) -> str:
+    """根据文件内容和 ingest_log 返回文件当前状态。
+
+    Returns:
+        "empty"   — 内容为空，跳过 LLM
+        "done"    — 已摄取且 hash 未变，无需重新处理
+        "changed" — 已摄取但 hash 有变化，需要重新摄取
+        "new"     — 从未摄取过
+    """
+    stripped = content.strip()
+    if not stripped:
+        return "empty"
+
+    current_hash = compute_hash(stripped)
+    log = load_ingest_log()
+    record = log["files"].get(str(file_path.resolve()))
+
+    if record is None:
+        return "new"
+    if record.get("hash") == current_hash:
+        return "done"
+    return "changed"
+
+
+def record_ingest(
+    file_path: Path,
+    content: str,
+    *,
+    ingest_mode: str | None = None,
+    wiki_page: str | None = None,
+) -> None:
+    """将文件摄取结果写入 ingest_log（v2 格式）。
 
     Args:
-        file_path: 文件路径。
+        file_path: 被摄取文件的绝对路径。
+        content: 文件内容（用于计算 hash）。
+        ingest_mode: 摄取模式，"quick" 或 "full"。
+        wiki_page: 生成的 Wiki 摘要页相对路径，如 "sources/xxx-2026-06-12.md"。
+    """
+    stripped = content.strip()
+    current_hash = compute_hash(stripped) if stripped else _EMPTY_HASH
+    status = "empty" if not stripped else "done"
+
+    log = load_ingest_log()
+    key = str(file_path.resolve())
+    existing = log["files"].get(key, {})
+
+    log["files"][key] = {
+        "hash": current_hash,
+        "prev_hash": existing.get("hash"),  # 记录上一次的 hash
+        "size": len(content.encode("utf-8")),
+        "status": status,
+        "ingest_mode": ingest_mode,
+        "ingested_at": existing.get("ingested_at", []) + [datetime.now().isoformat()],
+        "wiki_page": wiki_page or existing.get("wiki_page"),
+    }
+    _save_ingest_log(log)
+
+
+def is_ingested(file_path: Path) -> bool:
+    """检查文件是否已经被摄取过（兼容旧调用，内部用 get_file_status 替代）。
+
     Returns:
-        True 表示已摄取，False 表示未摄取或记录不存在。
+        True 表示 log 中存在该文件记录。
     """
     log = load_ingest_log()
-    return str(file_path.resolve()) in log
+    return str(file_path.resolve()) in log["files"]
 
 
 # 系统级黑名单：无论任何场景都跳过（不可配置）
