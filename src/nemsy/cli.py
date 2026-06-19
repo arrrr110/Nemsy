@@ -42,6 +42,8 @@ CHAT_HELP = """\
   [cyan]/ingest <路径> -f[/cyan]             强制重新摄取（忽略历史记录）
   [cyan]/ingest <路径> --wide[/cyan]          加载更多 Wiki 上下文（适合 Wiki 已积累大量内容时）
   [cyan]/ingest <路径> --dry-run[/cyan]      仅预览待摄取文件，不实际执行
+  [cyan]/save[/cyan]                        将当前对话整理为洞见归档到 insights/
+  [cyan]/save <主题>[/cyan]                  归档时附加主题提示，帮助 LLM 聚焦
   [cyan]/query <问题>[/cyan]                 向 Wiki 提问
   [cyan]/sources[/cyan]                     列出原始资料层的所有文件
   [cyan]/lint[/cyan]                        运行 Wiki 健康检查
@@ -159,6 +161,9 @@ def chat() -> None:
             elif cmd == "sources":
                 _print_sources()
                 continue
+            elif cmd == "save":
+                asyncio.run(_run_save(history, topic=arg or None))
+                continue
             else:
                 console.print(f"[red]未知命令：/{cmd}，输入 /help 查看可用命令[/red]")
                 continue
@@ -170,6 +175,16 @@ def chat() -> None:
         # 更新历史
         history.append({"role": "user", "content": user_input})
         history.append({"role": "assistant", "content": response})
+
+        # ARCHIVABLE: true 自动检测
+        if "ARCHIVABLE: true" in response:
+            console.print("\n[yellow]💡 Nemsy 认为此回答值得归档，是否保存到 insights/？[y/N][/yellow] ", end="")
+            try:
+                confirm = input().strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                confirm = ""
+            if confirm in ("y", "yes"):
+                asyncio.run(_run_save(history, topic=None))
 
         # 如果配置了最大轮数，裁剪历史
         max_turns = settings.memory.max_turns
@@ -509,6 +524,17 @@ async def _run_query(question: str, *, archive: bool = False, use_reason: bool =
         append_log("query", question, detail="使用 reasoner 模式")
     else:
         await agent_query(question, archive=archive)
+
+
+async def _run_save(history: list, *, topic: str | None = None) -> None:
+    """将对话历史整理为洞见归档到 insights/。"""
+    from nemsy.agent import save_insight
+    from nemsy.llm import Message
+
+    if not history:
+        console.print("[yellow]⚠ 当前对话历史为空，请先进行对话再归档。[/yellow]")
+        return
+    await save_insight(history, topic=topic)
 
 
 async def _run_lint() -> None:

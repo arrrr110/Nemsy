@@ -322,7 +322,7 @@ LLM（_QUERY_SYSTEM prompt）
 
 - [ ] **`_index.md` 目录语境支持**（⭐ 优先）：每个目录下可放一个 `_index.md` 描述该目录的领域定位与收集意图；`collect_files()` 将其**从返回列表中排除**（不参与摄取流程、不进 ingest_log、不生成 Wiki 摘要页）；ingest 批量处理该目录时，单独读取 `_index.md` 内容作为**目录语境前缀**注入同目录其他文件的 prompt，引导 LLM 使用预设 tags 框架。模板见 `config/_index.example.md`。
 - [ ] **wiki_page 反向映射**：原始资料 → Wiki 摘要页，`ingest_mode` 写入摘要页 frontmatter
-- [ ] **chat 归档（`/save` + `ARCHIVABLE`）**：chat 过程中产生的有价值结论写入 `insights/` 子目录；两种触发方式：① 用户手动输入 `/save`，Nemsy 将最近几轮对话整理为结构化洞见页；② LLM 回复末尾标注 `ARCHIVABLE: true` 时，Nemsy 自动提示用户确认归档。归档目标：`insights/<标题>-<日期>.md`，frontmatter 标注 `type: insight`、`source: chat`。
+- [x] **chat 归档（`/save` + `ARCHIVABLE`）**：chat 过程中产生的有价值结论写入 `insights/` 子目录；两种触发方式：① 用户手动输入 `/save [主题]`，Nemsy 将当前对话整理为结构化洞见页；② LLM 回复末尾标注 `ARCHIVABLE: true` 时，Nemsy 自动提示用户确认归档。归档目标：`insights/<标题>-<日期>.md`，frontmatter 标注 `type: insight`、`source: chat`。
 - [ ] **对话历史持久化**：chat 轮次写入 `log.md` 摘要；不单独存全文历史（与 log.md 职责合并）
 - [ ] **sources 命令显示文件状态**：在目录树旁标注 empty/done/changed/ingested_at
 - [ ] **token_log.json**：每次 LLM 调用后写入一条记录，字段：`timestamp`、`command`（ingest/query/lint/chat）、`model`、`prompt_tokens`、`completion_tokens`、`total_tokens`；`nemsy status` 命令展示累计消耗摘要

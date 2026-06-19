@@ -259,6 +259,21 @@ def _parse_and_write_ingest(response: str, source_title: str, *, out_console: "C
     if code_block_match:
         summary_content = code_block_match.group(1).strip()
 
+    # 若 LLM 违规在 SUMMARY 段内写了 ## 待探索问题，先将其剔除，避免与追加段重复
+    summary_content = re.sub(
+        r"\n{0,2}---\n\n## 待探索问题\b.*$",
+        "",
+        summary_content,
+        flags=re.DOTALL,
+    ).rstrip()
+    # 同样处理没有 --- 分隔线的裸 ## 待探索问题
+    summary_content = re.sub(
+        r"\n{0,2}## 待探索问题\b.*$",
+        "",
+        summary_content,
+        flags=re.DOTALL,
+    ).rstrip()
+
     # 提取 QUESTIONS 部分，追加到摘要页末尾
     questions_text: str = ""
     questions_match = re.search(r"---QUESTIONS---\n(.*?)$", response, re.DOTALL)
@@ -409,3 +424,116 @@ async def chat_turn(
         return full_response
     else:
         return await llm.chat(system, messages)
+
+
+# ---------------------------------------------------------------------------
+# 对话归档
+# ---------------------------------------------------------------------------
+
+_SAVE_SYSTEM = (
+    _BASE_SYSTEM
+    + """
+当前任务：将对话中的洞见整理为结构化 Wiki 页面。
+
+工作流程：
+1. 仔细阅读提供的对话历史
+2. 提炼核心观点、结论、发现
+3. 生成一个结构清晰的洞见页面
+
+输出格式为完整 Markdown，含 frontmatter：
+---
+title: <简洁标题，概括核心洞见>
+date: <今天日期>
+type: insight
+source: chat
+tags: [<相关标签>]
+---
+
+# <标题>
+
+> <一句话核心结论>
+
+## 主要洞见
+
+<条理清晰的洞见内容>
+
+## 背景与推导
+
+<这些洞见是如何在对话中形成的，简要说明>
+
+## 关联知识
+
+<与 Wiki 已有内容的关联，用 [[页面名]] 标注>
+"""
+)
+
+
+async def save_insight(
+    history: list[llm.Message],
+    *,
+    topic: str | None = None,
+    stream: bool = True,
+) -> str | None:
+    """将当前对话历史整理为结构化洞见，写入 insights/ 子目录。
+
+    Args:
+        history: 当前对话历史。
+        topic: 可选的主题提示，帮助 LLM 聚焦。
+        stream: 是否流式输出。
+    Returns:
+        写入的文件路径，失败时返回 None。
+    """
+    from datetime import date
+
+    if not history:
+        console.print("[yellow]⚠ 当前对话历史为空，无法归档。[/yellow]")
+        return None
+
+    # 将对话历史格式化为可读文本
+    history_text = "\n\n".join(
+        f"{'用户' if m['role'] == 'user' else 'Nemsy'}：{m['content']}"
+        for m in history
+    )
+    topic_hint = f"\n\n归档主题提示：{topic}" if topic else ""
+    user_prompt = f"请整理以下对话中的洞见：\n\n{history_text}{topic_hint}"
+
+    system, messages = llm.build_messages(
+        _SAVE_SYSTEM.format(wiki_path=settings.vault.wiki_path), [], user_prompt
+    )
+
+    if stream:
+        console.print("\n[cyan]Nemsy 正在整理对话洞见...[/cyan]\n")
+        full_response = ""
+        async for chunk in llm.chat_stream(system, messages):
+            console.print(chunk, end="", markup=False)
+            full_response += chunk
+        console.print()
+    else:
+        full_response = await llm.chat(system, messages)
+
+    # 去除可能的 ```markdown 包裹
+    import re
+    content = full_response.strip()
+    code_block = re.match(r"^```(?:markdown)?\s*\n(.*?)\n```\s*$", content, re.DOTALL)
+    if code_block:
+        content = code_block.group(1).strip()
+
+    # 从 frontmatter 提取 title 作为文件名
+    title_match = re.search(r"^title:\s*(.+)$", content, re.MULTILINE)
+    if title_match:
+        raw_title = title_match.group(1).strip().strip('"\'')
+    else:
+        raw_title = topic or "对话洞见"
+
+    safe_title = re.sub(r'[^\w\u4e00-\u9fff\-_ ]', '', raw_title).strip().replace(" ", "-")
+    filename = f"{settings.vault.wiki_insights_dir}/{safe_title}-{date.today()}.md"
+
+    wiki_path = settings.vault.wiki_path
+    file_path = wiki_path / filename
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_text(content, encoding="utf-8")
+
+    _update_index(raw_title, filename, f"对话洞见：{raw_title[:30]}")
+    append_log("save", raw_title, detail="chat 归档")
+    console.print(f"\n[green]✓ 洞见已归档：{filename}[/green]")
+    return filename
