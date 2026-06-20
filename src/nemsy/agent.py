@@ -29,9 +29,11 @@ console = Console()
 # System prompts
 # ---------------------------------------------------------------------------
 
-_BASE_SYSTEM = """你是 Nemsy，一个由 DeepSeek 驱动的个人知识助手。
+from nemsy.schema import WIKI_PAGE_SCHEMA
+
+_BASE_SYSTEM = f"""你是 Nemsy，一个由 DeepSeek 驱动的个人知识助手。
 你负责维护用户的 Obsidian Wiki 知识库。
-Wiki 目录：{wiki_path}
+Wiki 目录：{{wiki_path}}
 
 你遵循以下原则：
 1. 知识积累优先：每次摄取新资料都要更新相关 Wiki 页面，不只是生成摘要
@@ -39,6 +41,8 @@ Wiki 目录：{wiki_path}
 3. 矛盾标注：用 > ⚠️ 矛盾 格式标注与已有知识相悖的内容
 4. 简洁精确：摘要简洁，关键信息不遗漏
 5. 中文优先：所有 Wiki 内容用中文撰写，专业术语保留英文
+
+{WIKI_PAGE_SCHEMA}
 """
 
 _INGEST_SYSTEM = (
@@ -49,7 +53,7 @@ _INGEST_SYSTEM = (
 工作流程：
 1. 仔细阅读提供的资料内容
 2. 提取关键信息、核心观点、重要实体
-3. 生成结构化摘要页面（包含 frontmatter：title, date, source, tags）
+3. 生成结构化摘要页面（frontmatter 按 Schema 规范，type: source）
 4. 提出该资料引发的值得深究的问题
 
 链接规范（重要）：
@@ -351,11 +355,13 @@ def _archive_query_result(question: str, answer: str) -> None:
     """将查询结果归档为 Wiki 页面。"""
     import re
     from datetime import date
+    from nemsy.schema import make_query_metadata
 
     safe_q = re.sub(r'[^\w\u4e00-\u9fff\-_ ]', '', question[:40]).strip().replace(" ", "-")
     filename = f"{settings.vault.wiki_queries_dir}/{safe_q}-{date.today()}.md"
     content = f"# {question}\n\n{answer.replace('ARCHIVABLE: true', '').strip()}"
-    write_wiki_note(filename, content, metadata={"title": question, "type": "query-result", "date": str(date.today())})
+    metadata = make_query_metadata(title=question, date=str(date.today()))
+    write_wiki_note(filename, content, metadata=metadata)
     _update_index(question, filename, f"查询结果：{question[:30]}...")
     console.print(f"\n[green]✓ 答案已归档：{filename}[/green]")
 
@@ -460,11 +466,11 @@ _SAVE_SYSTEM = (
 2. 提炼核心观点、结论、发现
 3. 生成一个结构清晰的洞见页面
 
-输出格式为完整 Markdown，含 frontmatter：
+输出格式为完整 Markdown，frontmatter 按 Schema 规范：
 ---
+type: insight
 title: <简洁标题，概括核心洞见>
 date: <今天日期>
-type: insight
 source: chat
 tags: [<相关标签>]
 ---
