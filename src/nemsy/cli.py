@@ -680,5 +680,24 @@ def _print_status() -> None:
     console.print()
 
 
+def smoke():
+    """运行烟雾测试（快速验证核心功能）。"""
+    import subprocess
+
+    console.print("\n[cyan]正在运行 Nemsy 烟雾测试...[/cyan]\n")
+    console.print("[dim]测试会调用真实 LLM API，生成的内容需手动清理。[/dim]\n")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests/test_smoke.py", "-v", "-s"],
+        cwd=Path(__file__).parent.parent.parent,  # 项目根目录
+    )
+
+    if result.returncode == 0:
+        console.print("\n[green]✓ 烟雾测试通过！[/green]")
+    else:
+        console.print("\n[red]✗ 烟雾测试失败，请检查输出。[/red]")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()

@@ -28,6 +28,7 @@ dependencies = [
 
 [project.scripts]
 nemsy = "nemsy.cli:main"
+nemsy-smoke = "nemsy.cli:smoke"
 
 [project.optional-dependencies]
 dev = [
@@ -56,3 +57,4 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "-v -s"
