@@ -324,8 +324,7 @@ LLM（_QUERY_SYSTEM prompt）
 
 ### 待实现（MVP 核心缺口）
 
-- [ ] **对话历史持久化**：chat 轮次写入 `log.md` 摘要；不单独存全文历史（与 log.md 职责合并）
-- [ ] **sources 命令显示文件状态**：在目录树旁标注 empty/done/changed/ingested_at
+- [x] **sources 命令显示文件状态**：在目录树旁标注 new/done/changed/empty，done 和 changed 附带最后摄取日期（MM-DD）；基于 mtime vs ingested_at 对比，不重新计算 hash，零 IO 开销
 - [ ] **token_log.json**：每次 LLM 调用后写入一条记录，字段：`timestamp`、`command`（ingest/query/lint/chat）、`model`、`prompt_tokens`、`completion_tokens`、`total_tokens`；`nemsy status` 命令展示累计消耗摘要（DS提供离线计算token工具）
 
 ### lint 增强（MVP 内，纯 Python 实现，不依赖外部工具）
@@ -344,6 +343,7 @@ LLM（_QUERY_SYSTEM prompt）
 - [ ] 进一步的 token 消耗分析：按文件/按时间段汇总（基础记录在 MVP 内实现，这里仅指更多维度的分析能力）
 - [ ] **qmd 检索引擎**：替代当前全文注入方案；支持 BM25/向量混合搜索 + LLM 重排序，全本地运行；触发时机：Wiki 页数 > 50-100 页，或 query 出现 token 超限问题时；可直接替换 `_load_wiki_context()` 实现，对外接口不变
 - [ ] **`/digest` 对话摘要**：每隔 N 轮或用户主动触发，Nemsy 将整段对话提炼为结构化笔记写回 `insights/`；是 `/save` 的自动化升级版
+- [ ] **记忆模块（在线化）**：对话历史经精炼后作为记忆模块子集上云存储，而非本地持久化；多端共享同一记忆状态，保证跨设备交互体验一致；本地 `history[]` 仅作 session 级工作记忆，不落盘
 
 #### 知识分享与智能体化
 - [ ] **`chat_task`（知识子集智能体）**：按 tag 圈定 Wiki 的一个知识子集，生成独立的对话智能体。用户可将某个领域的知识（如"儿童语言发育"）单独打包为一个 task，分享给指定伙伴使用，既实现知识共享，又不暴露其他私有知识。本地实现：`/query --tags 儿童,语言发育 "问题"`，只在该 tag 子集内检索；线上化后可生成分享链接并附带权限控制（只读/可对话）。核心逻辑为 `_load_wiki_context` 加 tag 过滤，接口不变。

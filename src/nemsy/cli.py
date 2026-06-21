@@ -309,6 +309,13 @@ def status() -> None:
     _print_status()
 
 
+@main.command()
+def sources() -> None:
+    """列出原始资料目录中的所有文件及其摄取状态。"""
+    settings.ensure_dirs()
+    _print_sources()
+
+
 # ---------------------------------------------------------------------------
 # 内部异步运行函数
 # ---------------------------------------------------------------------------
@@ -623,10 +630,56 @@ async def _run_lint() -> None:
 # 状态显示
 # ---------------------------------------------------------------------------
 
+def _file_status_label(p: Path, log_files: dict) -> str:
+    """根据 ingest_log 返回文件的状态标签（不重新计算 hash）。
+
+    判断逻辑：
+    - 文件为空            → empty（灰）
+    - log 中无记录        → new（白）
+    - log 中有记录：
+      - mtime > ingested_at 最后一次  → changed（黄）
+      - 否则                          → done（绿）
+
+    Returns:
+        Rich 标记字符串，含状态标签和可选的 ingested_at 日期。
+    """
+    from datetime import datetime
+
+    # 空文件
+    try:
+        if p.stat().st_size == 0:
+            return "[dim]empty[/dim]"
+    except OSError:
+        return "[dim]?[/dim]"
+
+    key = str(p.resolve())
+    record = log_files.get(key)
+
+    if record is None:
+        return "[white]new[/white]"
+
+    ingested_at_list: list[str] = record.get("ingested_at", [])
+    if not ingested_at_list:
+        return "[white]new[/white]"
+
+    last_ingest_str = ingested_at_list[-1]
+    try:
+        last_ingest_dt = datetime.fromisoformat(last_ingest_str)
+        mtime = datetime.fromtimestamp(p.stat().st_mtime)
+        if mtime > last_ingest_dt:
+            date_label = last_ingest_dt.strftime("%m-%d")
+            return f"[yellow]changed[/yellow] [dim]{date_label}[/dim]"
+    except (ValueError, OSError):
+        pass
+
+    date_label = datetime.fromisoformat(last_ingest_str).strftime("%m-%d")
+    return f"[green]done[/green] [dim]{date_label}[/dim]"
+
+
 def _print_sources() -> None:
-    """列出原始资料层（origin-sources）中的所有文件。"""
+    """列出原始资料层（origin-sources）中的所有文件，并标注摄取状态。"""
     from rich.tree import Tree
-    from nemsy.vault import collect_files
+    from nemsy.vault import collect_files, load_ingest_log
 
     raw_path = settings.vault.raw_sources_path
     if not raw_path:
@@ -641,20 +694,31 @@ def _print_sources() -> None:
         console.print(f"[dim]原始资料目录为空：{raw_path}[/dim]")
         return
 
+    # 一次性加载 ingest_log，避免循环内重复读盘
+    log_files: dict = load_ingest_log().get("files", {})
+
     tree = Tree(f"[bold cyan]{raw_path.name}/[/bold cyan]  [dim]({len(paths)} 个文件)[/dim]")
     added_branches: dict[str, object] = {}
     for p in paths:
         rel = p.relative_to(raw_path)
         parent = str(rel.parent) if str(rel.parent) != "." else ""
+        status_label = _file_status_label(p, log_files)
+        label = f"[white]{rel.name}[/white]  {status_label}"
         if parent:
             if parent not in added_branches:
                 added_branches[parent] = tree.add(f"[cyan]{parent}/[/cyan]")
             branch = added_branches[parent]
         else:
             branch = tree
-        branch.add(f"[white]{rel.name}[/white]")  # type: ignore[union-attr]
+        branch.add(label)  # type: ignore[union-attr]
 
     console.print(tree)
+    console.print(
+        "[dim]  状态图例：[white]new[/white] 未摄取  "
+        "[green]done MM-DD[/green] 已摄取  "
+        "[yellow]changed MM-DD[/yellow] 已修改  "
+        "[dim]empty[/dim] 空文件[/dim]"
+    )
 
 
 def _print_status() -> None:
