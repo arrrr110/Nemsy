@@ -14,26 +14,39 @@ const NAV_ITEMS: { id: View; icon: string; label: string }[] = [
 ]
 
 export default function App() {
-  const [view, setView] = useState<View>('chat')
+  const [view, setView]           = useState<View>('chat')
+  const [collapsed, setCollapsed] = useState(false)
 
   return (
     <div className="app">
       {/* ── Sidebar ──────────────────────────────────── */}
-      <aside className="sidebar">
+      <aside className={`sidebar${collapsed ? ' sidebar-collapsed' : ''}`}>
         <div className="sidebar-brand">
-          <span className="brand-dot" />
-          Nemsy
+          {!collapsed && (
+            <>
+              <span className="brand-dot" />
+              <span className="brand-name">Nemsy</span>
+            </>
+          )}
+          <button
+            className="sidebar-collapse-btn"
+            onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? '展开侧边栏' : '折叠侧边栏'}
+          >
+            {collapsed ? '›' : '‹'}
+          </button>
         </div>
 
         <nav className="sidebar-nav">
           {NAV_ITEMS.map((item) => (
             <button
               key={item.id}
-              className={`nav-item${view === item.id ? ' active' : ''}`}
+              className={`nav-item${view === item.id ? ' active' : ''}${collapsed ? ' nav-item-icon-only' : ''}`}
               onClick={() => setView(item.id)}
+              title={collapsed ? item.label : undefined}
             >
               <span className="nav-icon">{item.icon}</span>
-              {item.label}
+              {!collapsed && item.label}
             </button>
           ))}
         </nav>

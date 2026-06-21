@@ -20,11 +20,22 @@ interface StatusData {
     reasoning_model: string
   }
   token_usage: {
-    total_prompt: number
-    total_completion: number
     total_calls: number
-    by_model: Record<string, { prompt: number; completion: number; calls: number }>
+    total_prompt_tokens: number
+    total_completion_tokens: number
+    total_tokens: number
+    by_command: Record<string, { calls: number; tokens: number }>
+    by_model: Record<string, { calls: number; tokens: number }>
   }
+}
+
+interface BalanceData {
+  available: boolean
+  total_balance?: string
+  granted_balance?: string
+  topped_up_balance?: string
+  currency?: string
+  reason?: string
 }
 
 function fmtNum(n: number) {
@@ -37,8 +48,10 @@ function fmtPath(p: string) {
 }
 
 export default function Status() {
-  const [data, setData] = useState<StatusData | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [data, setData]       = useState<StatusData | null>(null)
+  const [error, setError]     = useState<string | null>(null)
+  const [balance, setBalance] = useState<BalanceData | null>(null)
+  const [balLoading, setBalLoading] = useState(true)
 
   useEffect(() => {
     fetch('/api/status')
@@ -50,11 +63,19 @@ export default function Status() {
       .catch((e) => setError(e.message))
   }, [])
 
+  useEffect(() => {
+    setBalLoading(true)
+    fetch('/api/balance')
+      .then((r) => r.ok ? r.json() as Promise<BalanceData> : Promise.reject(r.status))
+      .then((b) => { setBalance(b); setBalLoading(false) })
+      .catch(() => { setBalance({ available: false, reason: 'fetch_error' }); setBalLoading(false) })
+  }, [])
+
   if (error)  return <div className="error-text">无法加载状态：{error}</div>
   if (!data)  return <div className="loading-text">加载中…</div>
 
   const usage = data.token_usage
-  const totalTokens = usage.total_prompt + usage.total_completion
+  const totalTokens = usage.total_tokens ?? (usage.total_prompt_tokens + usage.total_completion_tokens)
 
   return (
     <div className="status-view">
@@ -142,6 +163,33 @@ export default function Status() {
             <span className="status-label">推理模型</span>
             <span className="status-value">{data.llm.reasoning_model}</span>
           </div>
+          <div className="status-row">
+            <span className="status-label">账户余额</span>
+            <span className="status-value">
+              {balLoading
+                ? <span className="status-badge badge-dim">查询中…</span>
+                : balance?.available
+                  ? <span className="status-badge badge-green">
+                      {balance.total_balance} {balance.currency}
+                    </span>
+                  : <span className="status-badge badge-red" title={balance?.reason}>
+                      {balance?.reason === 'api_key_not_set' ? '未配置 Key' : '查询失败'}
+                    </span>
+              }
+            </span>
+          </div>
+          {balance?.available && (
+            <div className="status-row">
+              <span className="status-label" style={{paddingLeft: '12px', color: 'var(--text-muted)', fontSize: '12px'}}>└ 充值</span>
+              <span className="status-value" style={{color: 'var(--text-muted)', fontSize: '12px'}}>{balance.topped_up_balance} {balance.currency}</span>
+            </div>
+          )}
+          {balance?.available && (
+            <div className="status-row">
+              <span className="status-label" style={{paddingLeft: '12px', color: 'var(--text-muted)', fontSize: '12px'}}>└ 赠送</span>
+              <span className="status-value" style={{color: 'var(--text-muted)', fontSize: '12px'}}>{balance.granted_balance} {balance.currency}</span>
+            </div>
+          )}
         </div>
 
         {/* ── Token 用量 ──────────────────────────────── */}
@@ -153,11 +201,11 @@ export default function Status() {
           </div>
           <div className="status-row">
             <span className="status-label">输入 tokens</span>
-            <span className="status-value">{fmtNum(usage.total_prompt)}</span>
+            <span className="status-value">{fmtNum(usage.total_prompt_tokens)}</span>
           </div>
           <div className="status-row">
             <span className="status-label">输出 tokens</span>
-            <span className="status-value">{fmtNum(usage.total_completion)}</span>
+            <span className="status-value">{fmtNum(usage.total_completion_tokens)}</span>
           </div>
           <div className="status-row">
             <span className="status-label">合计 tokens</span>
@@ -167,15 +215,30 @@ export default function Status() {
           </div>
         </div>
 
+        {/* ── 按命令明细 ──────────────────────────────── */}
+        {Object.keys(usage.by_command ?? {}).length > 0 && (
+          <div className="status-card">
+            <div className="status-card-title">按命令明细</div>
+            {Object.entries(usage.by_command).map(([cmd, m]) => (
+              <div className="status-row" key={cmd}>
+                <span className="status-label">{cmd}</span>
+                <span className="status-value">
+                  {fmtNum(m.tokens)} tokens · {fmtNum(m.calls)} 次
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* ── 按模型明细 ──────────────────────────────── */}
         {Object.keys(usage.by_model).length > 0 && (
-          <div className="status-card" style={{ gridColumn: '1 / -1' }}>
+          <div className="status-card">
             <div className="status-card-title">按模型明细</div>
             {Object.entries(usage.by_model).map(([model, m]) => (
               <div className="status-row" key={model}>
                 <span className="status-label">{model}</span>
                 <span className="status-value">
-                  {fmtNum(m.prompt + m.completion)} tokens · {fmtNum(m.calls)} 次
+                  {fmtNum(m.tokens)} tokens · {fmtNum(m.calls)} 次
                 </span>
               </div>
             ))}

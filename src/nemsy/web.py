@@ -102,6 +102,13 @@ class SettingsPayload(BaseModel):
 # 路由：状态
 # ---------------------------------------------------------------------------
 
+@app.get("/api/balance")
+async def api_balance() -> dict:
+    """单独的余额查询端点，供前端独立轮询（避免拖慢 /api/status）。"""
+    from nemsy import llm
+    return await llm.fetch_balance_async()
+
+
 @app.get("/api/status")
 async def api_status() -> dict:
     """返回与 nemsy status 等价的结构化数据。"""
@@ -192,18 +199,39 @@ async def api_sources() -> dict:
 
 @app.get("/api/wiki")
 async def api_wiki() -> dict:
-    """返回 Wiki 目录树。"""
+    """返回 Wiki 目录树（含 frontmatter 元数据）。"""
     from nemsy.vault import list_wiki_notes
+    import frontmatter as fm
 
     wiki_path = settings.vault.wiki_path
     if not wiki_path.exists():
-        return {"files": []}
+        return {"root": str(wiki_path), "files": []}
 
     notes = list_wiki_notes()
-    return {
-        "root": str(wiki_path),
-        "files": [str(p.relative_to(wiki_path)) for p in notes],
-    }
+    result = []
+    for p in notes:
+        rel = str(p.relative_to(wiki_path))
+        try:
+            post = fm.load(str(p))
+            raw_type  = post.get("type")
+            raw_title = post.get("title")
+            raw_date  = post.get("date")
+            raw_tags  = post.get("tags")
+            note_type = str(raw_type)  if raw_type  is not None else ""
+            title     = str(raw_title) if raw_title is not None else p.stem
+            date      = str(raw_date)  if raw_date  is not None else ""
+            tags      = list(raw_tags) if isinstance(raw_tags, (list, tuple)) else []
+        except Exception:
+            note_type, title, date, tags = "", p.stem, "", []
+        result.append({
+            "rel_path": rel,
+            "abs_path": str(p),
+            "type": note_type,
+            "title": title,
+            "date": date,
+            "tags": tags,
+        })
+    return {"root": str(wiki_path), "files": result}
 
 
 @app.get("/api/wiki/resolve")
@@ -397,17 +425,72 @@ async def api_save(req: SaveRequest) -> dict:
 # 路由：配置
 # ---------------------------------------------------------------------------
 
+def _mask_key(value: str) -> str:
+    """将 API Key 中段替换为 *，只保留首 4 位和末 4 位。
+    例：sk-a1b2c3d4e5f6g7h8 → sk-a****g7h8
+    """
+    if not value:
+        return ""
+    if len(value) <= 12:
+        return "***已配置***"
+    return value[:6] + "*" * (len(value) - 10) + value[-4:]
+
+
+def _read_env_pairs() -> list[dict]:
+    """读取 .env 文件，返回 [{key, raw, masked}] 列表。
+    key 中带 KEY/TOKEN/SECRET/PASSWORD 的值自动脱敏。
+    """
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if not env_path.exists():
+        return []
+    pairs = []
+    sensitive_keywords = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASS")
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        k = k.strip()
+        v = v.strip().strip('"').strip("'")
+        is_sensitive = any(kw in k.upper() for kw in sensitive_keywords)
+        pairs.append({
+            "key": k,
+            "value": _mask_key(v) if is_sensitive else v,
+            "sensitive": is_sensitive,
+        })
+    return pairs
+
+
+def _read_toml_raw() -> dict:
+    """读取 config/settings.toml，返回原始字典，不存在时返回空 {}。"""
+    toml_path = Path(__file__).parent.parent.parent / "config" / "settings.toml"
+    if not toml_path.exists():
+        return {}
+    try:
+        import tomllib
+        return tomllib.loads(toml_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
 @app.get("/api/settings")
 async def api_get_settings() -> dict:
-    """读取当前配置（API Key 脱敏）。"""
-    key = settings.llm.api_key
+    """读取当前配置（API Key 脱敏），返回结构化 toml 和 .env 条目。"""
     return {
-        "deepseek_api_key": f"{key[:8]}...{key[-4:]}" if key and len(key) > 12 else ("已配置" if key else ""),
-        "vault_path": str(settings.vault.path),
-        "vault_wiki_dir": settings.vault.wiki_dir,
-        "vault_raw_sources_dir": settings.vault.raw_sources_dir,
-        "llm_default_model": settings.llm.default_model,
-        "llm_reasoning_model": settings.llm.reasoning_model,
+        "toml": _read_toml_raw(),
+        "env": _read_env_pairs(),
+        # 快捷摘要（兼容旧字段，供状态卡片用）
+        "summary": {
+            "vault_path": str(settings.vault.path),
+            "wiki_dir": settings.vault.wiki_dir,
+            "raw_sources_dir": settings.vault.raw_sources_dir,
+            "default_model": settings.llm.default_model,
+            "reasoning_model": settings.llm.reasoning_model,
+            "api_key_masked": _mask_key(settings.llm.api_key),
+            "base_url": settings.llm.base_url,
+        },
     }
 
 

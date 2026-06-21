@@ -222,3 +222,85 @@ def _extract_text(content: list) -> str:
                 parts.append(block.text)
             # thinking 块静默跳过
     return "".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# 账户余额查询
+# ---------------------------------------------------------------------------
+
+def fetch_balance() -> dict:
+    """同步查询 DeepSeek 账户余额，返回结构化 dict。
+
+    返回格式::
+
+        # 成功
+        {"available": True, "total_balance": "10.00",
+         "granted_balance": "0.00", "topped_up_balance": "10.00",
+         "currency": "CNY"}
+
+        # 失败
+        {"available": False, "reason": "<原因字符串>"}
+
+    reason 取值：
+        "api_key_not_set"  — API Key 未配置
+        "http_<code>"      — HTTP 状态码非 200
+        "<异常信息>"        — 网络/解析异常
+    """
+    if not settings.llm.api_key:
+        return {"available": False, "reason": "api_key_not_set"}
+    try:
+        import httpx
+        resp = httpx.get(
+            "https://api.deepseek.com/user/balance",
+            headers={
+                "Accept": "application/json",
+                "Authorization": f"Bearer {settings.llm.api_key}",
+            },
+            timeout=5.0,
+        )
+        if resp.status_code == 200:
+            infos = resp.json().get("balance_infos", [])
+            if infos:
+                info = infos[0]
+                return {
+                    "available": True,
+                    "total_balance": info.get("total_balance", "0"),
+                    "granted_balance": info.get("granted_balance", "0"),
+                    "topped_up_balance": info.get("topped_up_balance", "0"),
+                    "currency": info.get("currency", "CNY"),
+                }
+            return {"available": True, "total_balance": "0", "currency": "CNY"}
+        return {"available": False, "reason": f"http_{resp.status_code}"}
+    except Exception as e:
+        return {"available": False, "reason": str(e)[:120]}
+
+
+async def fetch_balance_async() -> dict:
+    """异步版余额查询（供 FastAPI 路由使用），底层逻辑与 fetch_balance() 相同。"""
+    if not settings.llm.api_key:
+        return {"available": False, "reason": "api_key_not_set"}
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                "https://api.deepseek.com/user/balance",
+                headers={
+                    "Accept": "application/json",
+                    "Authorization": f"Bearer {settings.llm.api_key}",
+                },
+            )
+        if resp.status_code == 200:
+            infos = resp.json().get("balance_infos", [])
+            if infos:
+                info = infos[0]
+                return {
+                    "available": True,
+                    "total_balance": info.get("total_balance", "0"),
+                    "granted_balance": info.get("granted_balance", "0"),
+                    "topped_up_balance": info.get("topped_up_balance", "0"),
+                    "currency": info.get("currency", "CNY"),
+                }
+            return {"available": True, "total_balance": "0", "currency": "CNY"}
+        return {"available": False, "reason": f"http_{resp.status_code}"}
+    except Exception as e:
+        return {"available": False, "reason": str(e)[:120]}
