@@ -29,8 +29,16 @@ dependencies = [
 [project.scripts]
 nemsy = "nemsy.cli:main"
 nemsy-smoke = "nemsy.cli:smoke"
+nemsy-web = "nemsy.cli:web"
 
 [project.optional-dependencies]
+web = [
+    # Web 后端
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    # 静态文件托管
+    "aiofiles>=23.2.0",
+]
 dev = [
     "pytest>=8.2.0",
     "pytest-asyncio>=0.23.0",

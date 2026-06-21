@@ -38,3 +38,7 @@ htmlcov/
 
 # mypy
 .mypy_cache/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/

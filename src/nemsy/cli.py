@@ -855,5 +855,22 @@ def smoke():
         sys.exit(1)
 
 
+@main.command()
+@click.option("--port", default=7860, show_default=True, help="监听端口")
+@click.option("--no-open", is_flag=True, default=False, help="不自动打开浏览器")
+def web(port: int, no_open: bool) -> None:
+    """启动 Web UI（FastAPI + React）。"""
+    try:
+        from nemsy.web import run_web
+    except ImportError:
+        console.print(
+            "[red]Web 依赖未安装，请运行：pip install -e '.[web]'[/red]"
+        )
+        sys.exit(1)
+
+    settings.ensure_dirs()
+    run_web(port=port, no_open=no_open)
+
+
 if __name__ == "__main__":
     main()
