@@ -206,6 +206,22 @@ async def api_wiki() -> dict:
     }
 
 
+@app.get("/api/wiki/resolve")
+async def api_wiki_resolve(title: str) -> dict:
+    """根据 Wiki 页面标题（stem，不含路径和 .md）找到实际文件的绝对路径。
+    用于前端点击引用角标后定位文件。
+    """
+    from nemsy.vault import list_wiki_notes
+
+    wiki_path = settings.vault.wiki_path
+    # 规范化查找：去除 .md 后缀、忽略路径前缀、忽略大小写
+    target = title.lower().removesuffix(".md")
+    for note in list_wiki_notes():
+        if note.stem.lower() == target:
+            return {"title": title, "abs_path": str(note), "rel_path": str(note.relative_to(wiki_path))}
+    raise HTTPException(status_code=404, detail=f"Wiki page not found: {title}")
+
+
 @app.get("/api/file")
 async def api_file(path: str) -> dict:
     """读取单个文件内容（sources 或 wiki）。"""

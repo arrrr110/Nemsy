@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useSSE } from '../hooks/useSSE'
+import MessageContent from '../components/MessageContent'
 
 type Mode = 'chat' | 'wiki'
 
@@ -155,8 +156,24 @@ export default function Chat() {
                 {msg.role === 'user' ? 'U' : 'N'}
               </div>
               <div className="message-body">
-                <div className={`message-bubble${msg.streaming ? ' streaming' : ''}`}>
-                  {msg.content || (msg.streaming ? '' : '…')}
+                <div className="message-bubble">
+                  {msg.role === 'user' ? (
+                    // 用户消息：纯文本
+                    msg.content
+                  ) : (
+                    // Assistant 消息：Markdown + Wiki 引用
+                    <MessageContent
+                      content={msg.content || (msg.streaming ? '' : '…')}
+                      streaming={msg.streaming}
+                      onOpenRef={(title) => {
+                        // 通过后端接口获取文件路径后打开
+                        fetch(`/api/wiki/resolve?title=${encodeURIComponent(title)}`)
+                          .then((r) => r.ok ? r.json() : null)
+                          .then((d) => { if (d?.abs_path) window.open(`/api/file?path=${encodeURIComponent(d.abs_path)}`, '_blank') })
+                          .catch(() => {})
+                      }}
+                    />
+                  )}
                 </div>
               </div>
             </div>
