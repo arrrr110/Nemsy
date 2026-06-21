@@ -1,8 +1,9 @@
 # Nemsy Frontend MVP 设计文档
 
-> 版本：v0.1-design  
+> 版本：v0.2  
 > 上位文档：MVP.md  
-> 目标：以最小代价将 CLI Agent 能力包装为本地 Web UI，保留流式输出体验，降低使用门槛
+> 目标：以最小代价将 CLI Agent 能力包装为本地 Web UI，保留流式输出体验，降低使用门槛  
+> 最后更新：2026-06-21
 
 ---
 
@@ -76,74 +77,91 @@ nemsy web --no-open  # 不自动打开浏览器
 
 ## 四、前端视图结构
 
+实际采用**左侧边栏导航 + 右侧内容区**布局（Obsidian 风格），替代原顶部导航栏方案。
+
 ```
-┌─────────────────────────────────────────────┐
-│  导航栏：Chat | 文件库 | 状态 | 设置          │
-├─────────────────────────────────────────────┤
-│                                             │
-│              当前视图内容区                   │
-│                                             │
-└─────────────────────────────────────────────┘
+┌────────────┬──────────────────────────────────────┐
+│  Sidebar   │           Main Content               │
+│  ──────    │  ┌────────────────────────────────┐  │
+│  💬 Chat   │  │ Header（标题 + 模式切换）       │  │
+│  📁 文件库  │  ├────────────────────────────────┤  │
+│  📊 状态   │  │ 消息流（滚动区）                │  │
+│  ⚙️ 设置   │  ├────────────────────────────────┤  │
+│            │  │ 输入框 + 发送/停止按钮           │  │
+│            │  └────────────────────────────────┘  │
+└────────────┴──────────────────────────────────────┘
 ```
 
-### 视图一：Chat（默认视图）
+### 视图一：Chat（默认视图）✅ 已完成
 
-- 对话气泡布局，用户输入框在底部
-- LLM 回复流式逐字渲染（SSE）
-- 顶部切换按钮：**Chat 模式** / **Query 模式**
-  - Chat 模式：对话有历史记忆（session 内）
-  - Query 模式：每次独立查询，基于 Wiki，等同 `nemsy query`
-- 工具栏按钮（对话框右侧或底部）：
-  - 📥 **Ingest**：弹出文件/目录选择器，触发摄取
-  - 💾 **Save**：等同 `/save`，将当前对话归档为洞见
-  - 🔍 **Lint**：触发 Wiki 健康检查，结果在对话流中展示
+- ✅ 对话气泡布局，用户输入框在底部
+- ✅ LLM 回复流式逐字渲染（SSE），streaming 光标闪烁
+- ✅ 顶部切换按钮：**Chat 模式** / **Wiki 模式**
+  - ✅ Chat 模式：多轮对话，携带 session 历史
+  - ✅ Wiki 模式：独立查询，基于知识图谱，等同 `nemsy query`
+- ✅ Markdown 渲染（加粗、列表、blockquote、代码块）
+- ✅ `[[页面名]]` 解析为行内角标，hover 显示 Wiki 标题
+- ✅ 气泡底部引用列表，点击跳转对应 Wiki 文件
+- ✅ Stop 按钮（生成中可中断）
+- ✅ Enter 发送 / Shift+Enter 换行
+- ✅ Web Prompt 独立优化：角标引用约束、禁止手动编号、禁止疏离表述
+- ⬜ 工具栏按钮：
+  - ⬜ 📥 **Ingest**：弹出文件/目录选择器，触发摄取
+  - ⬜ 💾 **Save**：将当前对话归档为洞见
+  - ⬜ 🔍 **Lint**：触发 Wiki 健康检查
 
-### 视图二：文件库
+### 视图二：文件库 ✅ 基础完成
 
 左右分栏：
-- 左：**原始资料（Sources）** 目录树，每个文件带状态徽章（new / done / changed / empty）
-  - 点击文件：右侧预览文件内容
-  - 右键文件：触发单文件 Ingest
-  - 顶部按钮：**全量扫描摄取**
-- 右：**Wiki** 目录树（只读展示）
-  - 点击文件：右侧预览 Wiki 页面（Markdown 渲染）
+- ✅ 左：Sources / Wiki 双 Tab 切换
+- ✅ **原始资料（Sources）** 目录树，每个文件带状态徽章（new / done / changed / empty）
+  - ✅ 点击文件：右侧预览文件内容（原始 Markdown）
+  - ✅ 顶部过滤搜索框，输入有内容时显示清空按钮（✕）
+- ✅ **Wiki** 目录树，按 type 分组展示，每条带 badge
+  - ✅ 点击文件：右侧预览 Wiki 页面（Markdown 渲染）
+  - ✅ 顶部过滤搜索框（同上）
+- ⬜ 右键文件：触发单文件 Ingest
+- ⬜ 顶部按钮：全量扫描摄取
 
-### 视图三：状态（Status）
+### 视图三：状态（Status）✅ 基础完成
 
-将 `nemsy status` 的输出结构化展示，分四块卡片：
-- Vault 路径 & 状态
-- Wiki 页面统计（总数、sources/queries/insights 分布）
-- LLM 配置 & 余额
-- Token 消耗摘要（累计调用、总 token、按指令/模型饼图或条形图）
+- ✅ Vault 路径 & 存在状态
+- ✅ Wiki 页面统计（总数、sources/queries 数量）
+- ✅ LLM 配置（API Key 状态、模型名、接入点）
+- ✅ **DeepSeek 账户余额**：独立异步查询（`/api/balance`），加载中显示 badge，不阻塞主状态数据；展示总余额及充值/赠送明细
+- ✅ Token 消耗摘要（累计调用、输入/输出/合计 tokens）
+- ✅ 按命令/模型明细展示
+- ⬜ Token 消耗可视化图表（饼图或条形图）
 
-### 视图四：设置（Settings）
+### 视图四：设置（Settings）✅ 只读完成
 
-表单形式，直接读写 `config/settings.toml` 和 `.env`：
-- DeepSeek API Key（脱敏显示）
-- 知识库根目录路径
-- 原始资料子目录名
-- Wiki 子目录名
-- 默认模型 / 推理模型
-- 保存后热重载配置（无需重启服务）
+- ✅ `config/settings.toml` 内容展示（递归分组渲染）
+- ✅ `.env` 环境变量展示，敏感字段（KEY/TOKEN/SECRET）中段自动脱敏
+- ✅ 首次使用引导 Banner：未配置 API Key 时显示，4 步引导用户完成配置
+- ✅ `.env` 配置说明 Tips：常驻说明各变量含义及注意事项
+- ✅ `.env` 缺失时显示快速创建命令指引
+- ⬜ 写操作（表单保存 + 热重载）→ Phase 3
 
 ---
 
-## 五、后端 API 设计（草案）
+## 五、后端 API 设计
 
 ```
-POST /api/chat          # Chat 模式单轮，SSE 流式返回
-POST /api/query         # Query 模式，SSE 流式返回
-POST /api/ingest        # 摄取单文件或目录
-POST /api/lint          # Wiki 健康检查，SSE 流式返回
-POST /api/save          # 归档当前对话为洞见
+POST /api/chat          # ✅ Chat 模式多轮，SSE 流式返回（含 history）
+POST /api/query         # ✅ Query/Wiki 模式，SSE 流式返回
+POST /api/ingest        # ✅ 摄取单文件或目录
+POST /api/lint          # ✅ Wiki 健康检查，SSE 流式返回
+POST /api/save          # ✅ 归档当前对话为洞见
 
-GET  /api/status        # 等同 nemsy status，返回 JSON
-GET  /api/sources       # 文件树 + 状态，返回 JSON
-GET  /api/wiki          # Wiki 目录树，返回 JSON
-GET  /api/file          # 读取单个文件内容（sources 或 wiki）
+GET  /api/status        # ✅ 等同 nemsy status，返回 JSON
+GET  /api/sources       # ✅ 文件树 + 状态，返回 JSON
+GET  /api/wiki          # ✅ Wiki 目录树，返回 JSON
+GET  /api/wiki/resolve  # ✅ 按标题解析 Wiki 文件绝对路径（引用跳转用）
+GET  /api/file          # ✅ 读取单个文件内容（sources 或 wiki）
 
-GET  /api/settings      # 读取当前配置
-POST /api/settings      # 更新配置并热重载
+GET  /api/balance       # ✅ 异步查询 DeepSeek 账户余额
+GET  /api/settings      # ✅ 读取当前配置（TOML + ENV，敏感字段脱敏）
+POST /api/settings      # ⬜ 更新配置并热重载
 ```
 
 SSE 流格式（与现有 `llm.chat_stream` 直接对接）：
@@ -185,30 +203,38 @@ Nemsy/
 
 ## 七、待实现清单
 
-### Phase 1：基础可用（本地 Chat）
+### Phase 1：基础可用（本地 Chat）✅ 已完成
 
-- [ ] `nemsy init` 交互式初始化命令
-- [ ] `nemsy web` 启动命令（uvicorn + 自动打开浏览器）
-- [ ] FastAPI 基础框架（`src/nemsy/web.py`）
-- [ ] SSE 流式接口：`/api/chat`、`/api/query`
-- [ ] React 前端脚手架（Vite + TypeScript）
-- [ ] Chat 视图（流式渲染 + Chat/Query 模式切换）
-- [ ] Status 视图（静态 JSON 展示）
+- [x] `nemsy web` 启动命令（uvicorn + 自动打开浏览器）
+- [x] FastAPI 基础框架（`src/nemsy/web.py`）
+- [x] SSE 流式接口：`/api/chat`（多轮）、`/api/query`
+- [x] React 前端脚手架（Vite + TypeScript，Obsidian 深色风格）
+- [x] Chat 视图：流式渲染 + Chat/Wiki 模式切换 + Markdown 渲染
+- [x] `[[页面名]]` → 行内角标 + 气泡底部引用列表（可点击跳转）
+- [x] Web Prompt 独立优化：角标引用约束、禁止疏离表述
+- [x] Status 视图：结构化卡片展示 Vault/Wiki/LLM/Token 用量
+- [ ] `nemsy init` 交互式初始化命令（暂缓，优先完成 UI）
 
-### Phase 2：文件库 & Ingest
+### Phase 2：文件库 & Ingest ✅ 部分完成
 
-- [ ] `/api/sources`、`/api/wiki` 目录树接口
-- [ ] 文件库视图（Sources + Wiki 双栏）
+- [x] `/api/sources`、`/api/wiki`、`/api/file`、`/api/wiki/resolve` 后端接口
+- [x] 文件库视图：Sources 目录树（带状态徽章）+ Wiki 目录树（按 type 分组）
+- [x] 点击文件预览内容（Markdown 渲染，Sources 原始、Wiki 渲染）
+- [x] 搜索过滤框 + 有内容时显示清空按钮
+- [x] Status 页 API 余额独立异步加载（`/api/balance`）
+- [x] Settings 视图只读完成（TOML + ENV 展示 + 首次引导）
+- [x] 侧边栏折叠/展开（动画过渡，折叠后图标模式）
+- [x] 架构清理：余额查询逻辑提取到 `llm.py`（`fetch_balance` / `fetch_balance_async`），CLI 和 Web 共用
 - [ ] 前端触发 Ingest（单文件 + 目录）
-- [ ] `/api/file` 文件内容预览接口
-- [ ] Markdown 渲染（Wiki 页面预览）
+- [ ] Chat 工具栏：📥 Ingest / 💾 Save / 🔍 Lint 按钮
 
-### Phase 3：完整功能
+### Phase 3：完整功能 ⬜ 未开始
 
-- [ ] Settings 视图（配置读写 + 热重载）
-- [ ] `/save`、`/lint` 前端入口
-- [ ] Token 消耗可视化（Status 视图图表）
-- [ ] 开发/生产模式构建流程打通
+- [x] `/api/settings` GET 接口（只读，含脱敏）
+- [ ] Settings 视图写操作（表单保存 + 热重载）
+- [ ] `/api/settings` POST 接口（写配置 + 热重载）
+- [ ] Token 消耗可视化图表（Status 视图）
+- [ ] 开发/生产模式构建流程打通（`npm run build` → FastAPI 静态托管）
 
 ---
 

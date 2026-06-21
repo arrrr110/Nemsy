@@ -5,7 +5,14 @@
 本项目基于 Karpathy 的 LLM Wiki 理念，由 DeepSeek 超长上下文模型驱动，以 Obsidian Vault 为知识源，为唯一用户提供持续积累、自主归纳的个人知识服务。
 
 ---
-![QQ群](design/qrcode_1782021903468.jpg "QQ群")
+<table><tr>
+<td><img src="design/Nemsy_Necrofizzle_HS.webp" alt="Nemsy Necrofizzle" width="160" /></td>
+<td><img src="design/qrcode_1782021903468.jpg" alt="QQ群" width="160" /></td>
+</tr></table>
+
+
+## Web效果
+![Nemsy Web](design/screen-shot.png "Nemsy Web")
 
 ## 目录结构
 
@@ -14,10 +21,12 @@ Nemsy/
 ├── src/nemsy/
 │   ├── __init__.py
 │   ├── cli.py          # CLI 入口（click + rich）
+│   ├── web.py          # Web 后端（FastAPI + SSE 接口）
 │   ├── agent.py        # Agent 核心：ingest / query / lint / chat / save
 │   ├── vault.py        # Obsidian Vault 读写操作
-│   ├── llm.py          # DeepSeek API 封装（流式 / 普通 / 推理）
+│   ├── llm.py          # DeepSeek API 封装（流式 / 普通 / 推理 / 余额查询）
 │   └── config.py       # 统一配置加载（.env + settings.toml）
+├── frontend/           # React 前端（Vite + TypeScript，Obsidian 风格）
 ├── config/
 │   └── settings.toml   # 项目配置（Vault 路径、模型、CLI 等）
 ├── tests/
@@ -189,6 +198,18 @@ raw_sources_dir = "origin-sources"
 ```powershell
 nemsy status
 ```
+
+---
+
+## Web UI
+
+```bash
+nemsy web           # 启动本地 Web 服务（默认端口 7860），自动打开浏览器
+nemsy web --port 8080
+nemsy web --no-open  # 不自动打开浏览器
+```
+
+提供四个视图：**Chat**（流式对话 + Wiki 问答）、**文件库**（Sources/Wiki 双栏预览）、**状态**（Token 用量 + API 余额）、**设置**（配置只读展示）。
 
 ---
 
