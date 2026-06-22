@@ -4,11 +4,12 @@
  * 布局：左侧双栏列表（Sources / Wiki），右侧文件内容预览面板
  *
  * Sources 栏：原始资料，每条显示摄取状态 badge（new/done/changed/empty）
+ *             点击「未摄取」/「已更新」badge → 弹出确认对话框 → 摄取为 Wiki
  * Wiki 栏：知识图谱笔记，每条显示类型 badge（source/query/insight/entity/concept）
  * 右侧：选中文件的 Markdown 原始内容（只读）
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -98,6 +99,13 @@ export default function FileLibrary() {
   // Wiki 搜索
   const [wikiFilter, setWikiFilter] = useState('')
 
+  // 摄取确认对话框
+  const [confirmTarget, setConfirmTarget] = useState<SourceFile | null>(null)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+
+  // 摄取状态：abs_path → 'ingesting' | 'error'
+  const [ingestingMap, setIngestingMap] = useState<Record<string, 'ingesting' | 'error'>>({})
+
   // 加载 Sources
   useEffect(() => {
     fetch('/api/sources')
@@ -128,6 +136,17 @@ export default function FileLibrary() {
       .catch((e) => { setWikiError(e.message); setWikiLoading(false) })
   }, [])
 
+  // 对话框打开/关闭同步
+  useEffect(() => {
+    const dlg = dialogRef.current
+    if (!dlg) return
+    if (confirmTarget) {
+      dlg.showModal()
+    } else {
+      dlg.close()
+    }
+  }, [confirmTarget])
+
   // 加载文件内容
   function openFile(abs_path: string, display_name: string) {
     if (!abs_path) {
@@ -145,6 +164,53 @@ export default function FileLibrary() {
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
       .then((d) => { setPreviewContent(d.content); setPreviewLoading(false) })
       .catch((e) => { setPreviewError(e.message); setPreviewLoading(false) })
+  }
+
+  // 点击 badge → 打开确认框（仅 new/changed）
+  function handleBadgeClick(e: React.MouseEvent, f: SourceFile) {
+    e.stopPropagation()
+    if (f.status !== 'new' && f.status !== 'changed') return
+    if (!f.abs_path) return
+    setConfirmTarget(f)
+  }
+
+  // 确认摄取
+  async function confirmIngest() {
+    const f = confirmTarget
+    if (!f) return
+    setConfirmTarget(null)
+    setIngestingMap((prev) => ({ ...prev, [f.abs_path]: 'ingesting' }))
+    try {
+      const res = await fetch('/api/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: f.abs_path }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      // 就地更新状态
+      setSources((prev) =>
+        prev.map((s) =>
+          s.abs_path === f.abs_path
+            ? { ...s, status: 'done', last_ingested: new Date().toISOString() }
+            : s
+        )
+      )
+      setIngestingMap((prev) => {
+        const next = { ...prev }
+        delete next[f.abs_path]
+        return next
+      })
+    } catch {
+      setIngestingMap((prev) => ({ ...prev, [f.abs_path]: 'error' }))
+      // 3s 后清除错误，允许重试
+      setTimeout(() => {
+        setIngestingMap((prev) => {
+          const next = { ...prev }
+          delete next[f.abs_path]
+          return next
+        })
+      }, 3000)
+    }
   }
 
   // 过滤
@@ -168,6 +234,34 @@ export default function FileLibrary() {
 
   return (
     <div className="file-library">
+      {/* ── 摄取确认对话框 ────────────────────────── */}
+      <dialog ref={dialogRef} className="ingest-dialog" onClose={() => setConfirmTarget(null)}>
+        <div className="ingest-dialog-body">
+          <div className="ingest-dialog-icon">📥</div>
+          <div className="ingest-dialog-title">摄取为 Wiki？</div>
+          <div className="ingest-dialog-file">
+            {confirmTarget ? basename(confirmTarget.path) : ''}
+          </div>
+          <div className="ingest-dialog-desc">
+            该文件将被 Nemsy 阅读并整理为一篇 Wiki 笔记，保存到知识图谱中。
+          </div>
+          <div className="ingest-dialog-actions">
+            <button
+              className="ingest-dialog-btn ingest-dialog-btn--cancel"
+              onClick={() => setConfirmTarget(null)}
+            >
+              取消
+            </button>
+            <button
+              className="ingest-dialog-btn ingest-dialog-btn--confirm"
+              onClick={confirmIngest}
+            >
+              确认摄取
+            </button>
+          </div>
+        </div>
+      </dialog>
+
       {/* ── 左侧列表面板 ───────────────────────────── */}
       <div className="fl-sidebar">
         {/* Tab 切换 */}
@@ -217,6 +311,19 @@ onChange={(e) => setSourcesFilter(e.target.value)}
                 const dir = dirpart(f.path)
                 const name = basename(f.path)
                 const isActive = selected?.abs_path === f.abs_path
+                const ingestState = ingestingMap[f.abs_path]
+                const canIngest = (f.status === 'new' || f.status === 'changed') && !!f.abs_path
+                // badge 展示：摄取中时替换显示
+                const badgeClass = ingestState === 'ingesting'
+                  ? 'badge-dim'
+                  : ingestState === 'error'
+                  ? 'badge-red'
+                  : SOURCE_STATUS_CLASS[f.status] ?? 'badge-muted'
+                const badgeLabel = ingestState === 'ingesting'
+                  ? '摄取中…'
+                  : ingestState === 'error'
+                  ? '摄取失败'
+                  : SOURCE_STATUS_LABEL[f.status] ?? f.status
                 return (
                   <button
                     key={f.abs_path}
@@ -225,8 +332,12 @@ onChange={(e) => setSourcesFilter(e.target.value)}
                   >
                     <div className="fl-item-top">
                       <span className="fl-item-name" title={f.path}>{name}</span>
-                      <span className={`fl-badge ${SOURCE_STATUS_CLASS[f.status] ?? 'badge-muted'}`}>
-                        {SOURCE_STATUS_LABEL[f.status] ?? f.status}
+                      <span
+                        className={`fl-badge ${badgeClass}${canIngest && !ingestState ? ' fl-badge-clickable' : ''}`}
+                        onClick={canIngest && !ingestState ? (e) => handleBadgeClick(e, f) : undefined}
+                        title={canIngest && !ingestState ? '点击摄取为 Wiki' : undefined}
+                      >
+                        {badgeLabel}
                       </span>
                     </div>
                     {dir && <div className="fl-item-dir">{dir}</div>}
